@@ -1,5 +1,11 @@
-# Object file
-*.o
+# Apple macOS custom attributes store
+*.DS_Store
 
-# Ada Library Information
-*.ali
+# VS Code Debugging.
+*.vscode
+
+# Compiled python modules.
+*.pyc
+
+# Compiled logging files.
+*.log
