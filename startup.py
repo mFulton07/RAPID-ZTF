@@ -1,179 +1,85 @@
 # Minimal demonstration of using AstroPy specutils to read a plot reduced
 # spectra from Liverpool Telescope SPRAT level 2 reduced FITS files
 
-from glob import glob
 import os
 import argparse
-import numpy as np
-import specutils as sp
-import statistics as st
+import pandas as pd
 
-from astropy.io import fits
-from astropy import units as u
-from astropy.visualization import quantity_support
-import astropy.wcs as fitswcs
-from astropy.wcs.docstrings import ORIGIN
-
-from spectres import spectres
-from scipy.signal import find_peaks
-from matplotlib import pyplot as plt
-
-quantity_support()
+from astrorapid.classify import Classify
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Plot a SPRAT spectrum')
+    parser = argparse.ArgumentParser(description='Run AstroRAPID on an object from the ZTF forced Photometry')
 
-    parser.add_argument('-d', dest='dir_str', help='Directory containing the reduced SPRAT "_2.fits" files to display. Directory must be at same level as sprat_splot.py script. Mandatory.', default = '2021zby')
-    parser.add_argument('-t', dest='datime_str', help='Date of the observation within the night. Also stored within the name of the educed SPRAT "_2.fits" files. Required format is in YYYYMMDD. Mandatory.', default = '20211008')
-    parser.add_argument('-x', dest='extn_str', choices=['2','SPEC_NONSS','3','SPEC_SS','4','NORMFLUX','5','FLUX'], default='5', help='Multi-extention to display (default: 5, FLUX). Mandatory.')
-    parser.add_argument('-z', dest='redshift_str', default='none', help='Redshift of host used in plotting the rest wavelength axis (default: none). Optional.')
-    parser.add_argument('-b', dest='binfactor_str', default='none', help='Bin factor used to rebin and smooth noisy spectra (default: none). Optional.')
+    parser.add_argument('-n', dest='filename', help='Name of the ZTF forced photometry .txt file to fit with RAPID. File must be inside candidates direcotry. Mandatory.', default = 'ZTF19abheamc')
+    parser.add_argument('-z', dest='redshift', help=' Spectroscopic or photometric redshift of object or host. Optional.')
     parser.add_argument('-v', dest='verbose', action='store_true', help='Turn on verbose mode (default: Off).')
 
     args = parser.parse_args()
 
-    # Parse the string names of the extensions into extension numbers
-    if args.extn_str in ['2','SPEC_NONSS']: 
-      extension = 2
-      unitName = "adu"
-    elif args.extn_str in ['3','SPEC_SS']: 
-      extension = 3
-      unitName = "adu"
-    elif args.extn_str in ['4','NORMFLUX']: 
-      # Relative flux normalized to 5500A is dimensionless
-      extension = 4
-      unitName = "Normalised"
-    elif args.extn_str in ['5','FLUX']: 
-      extension = 5
-      unitName = "erg/s/cm2/A"
+    # check if file exists
+    obj = args.filename
+    filepath = os.path.dirname(os.path.abspath(__file__)) + f'/candidates/{obj}.txt'
+    if os.path.isfile(filepath) : 
+      print(f'{obj}.txt file found!')
+    else:
+      print(f'{obj}.txt file not found!')
+      quit()
     
 if args.verbose:
-  print (args)
+  print(args)
 
-# Convert the host redshift into a number if one is provided
+# Convert the redshift into a number if one is provided
 try:
-  host_z = float(args.redshift_str)
+  z = float(args.redshift)
 except:
-  host_z = 'none'
+  z = 'none'
 
-# Convert the bin factor into a number if one is provided
-try:
-  bf = float(args.binfactor_str)
-except:
-  bf = 'none'
-
-# Read in and perfrom a naive median stack of data to get specdata
-obj = args.dir_str
-date = int(args.datime_str)
+# Read in forced photometry file and drop comment lines
 data = []
-os.chdir(f'{obj}')
-for fn in glob(f"v_e_{date}*_2.fits"):
-    f=fits.open(fn)
-    data.append(f[extension].data)
-data = np.array(data)
-specdata = np.median(data, axis=0)[0]
+with open(filepath) as fp:
+  for line in fp:
+      if not line.lstrip().startswith('#'):
+        line=line.strip()
+        line=line.strip("\n")
+        data.append(line)
 
-# Spectra are stored as 2D NAXIS1 x 1 arrays. Read and convert to a 1D NAXIS vector. 
-specheader = f[extension].header
-wcsheader = dict()
-for key in ("CDELT1", "CRVAL1", "CUNIT1", "CTYPE1", "CRPIX1"):
-    wcsheader[key] = specheader[key]
+# turn photometry into a semi dataframe
+headers = data[0].replace(" ", "").split(",")
+data.pop(0)
+def floatify(val):
+    try:
+        return float(val)
+    except Exception as e:
+        return val
+semi_df = [[floatify(x) for x in e.split()] for e in data]
 
-# Grab some exposure information from the header
-telescope =   '# TELESCOPE = ' + specheader["TELESCOP"]
-instrument =  '# INSTRUMENT = ' + specheader["INSTRUME"]
-user =        '# OWNER = ' + specheader["USERID"]
-proposal =    '# PROPOSAL = ' + specheader["PROPID"]
-object =      '# OBJECT = ' + specheader["CAT-NAME"]
-ra =          '# RA = ' + specheader["CAT-RA"]
-dec =         '# DEC = ' + specheader["CAT-DEC"]
-dateObs =     '# DATE-OBS = ' + specheader["DATE-OBS"]
-mjdObs =      '# MJD-OBS = ' + str(specheader["MJD"])
-exptime =     '# EXPTIME-OBS = ' + str(specheader["EXPTIME"]) + 's'
-airmass =     '# AIRMASS-OBS = ' + str(specheader["AIRMASS"])
-seeing =      '# SEEING-OBS = ' + str(specheader["ESTSEE"])
-colData =     '# wl fl'
-colType =     f'# [A] [{unitName}]'
+# convert semi dataframe into a full pandas dataframe
+full_df = pd.DataFrame.from_records(semi_df)
+full_df.columns = headers
 
-# For debug purposes
-#for item in specheader:
-#  print(item +' : '+str(specheader[item]))
+print(full_df)
 
-flux = specdata * u.Unit("adu")
-# create WCS Wavelength Calibration from fits header
-my_wcs = fitswcs.WCS(wcsheader)
+# Light curve information. It may be easier if this is read from a file and later manipulated into this format.
+mjd = [57433.4816, 57436.4815, 57439.4817, 57451.4604, 57454.4397, 57459.3963, 57462.418 , 57465.4385, 57468.3768, 57473.3606, 57487.3364, 57490.3341, 57493.3154, 57496.3352, 57505.3144, 57513.2542, 57532.2717, 57536.2531, 57543.2545, 57546.2703, 57551.2115, 57555.2669, 57558.2769, 57561.1899, 57573.2133,57433.5019, 57436.4609, 57439.4587, 57444.4357, 57459.4189, 57468.3142, 57476.355 , 57479.3568, 57487.3586, 57490.3562, 57493.3352, 57496.2949, 57505.3557, 57509.2932, 57513.2934, 57518.2735, 57521.2739, 57536.2321, 57539.2115, 57543.2301, 57551.1701, 57555.2107, 57558.191 , 57573.1923, 57576.1749, 57586.1854]
+flux = [2.0357230e+00, -2.0382695e+00,  1.0084588e+02,  5.5482742e+01,  1.4867026e+01, -6.5136810e+01,  1.6740545e+01, -5.7269131e+01,  1.0649184e+02,  1.5505235e+02,  3.2445984e+02,  2.8735449e+02,  2.0898877e+02,  2.8958893e+02,  1.9793906e+02, -1.3370536e+01, -3.9001358e+01,  7.4040916e+01, -1.7343750e+00,  2.7844931e+01,  6.0861992e+01,  4.2057487e+01,  7.1565346e+01, -2.6085690e-01, -6.8435440e+01, 17.573107  ,   41.445435  , -110.72664   ,  111.328964  ,  -63.48336   ,  352.44907   ,  199.59058   ,  429.83075   ,  338.5255    ,  409.94604   ,  389.71262   ,  195.63905   ,  267.13318   ,  123.92461   ,  200.3431    ,  106.994514  ,  142.96387   ,   56.491238  ,   55.17521   ,   97.556946  ,  -29.263103  ,  142.57687   ,  -20.85057   ,   -0.67210346,   63.353024  ,  -40.02601]
+fluxerr = [42.784702,  43.83665 ,  99.98704 ,  45.26248 ,  43.040398,  44.00679 ,  41.856007,  49.354336, 105.86439 , 114.0044  ,  45.697918,  44.15781 ,  60.574158,  93.08788 ,  66.04482 ,  44.26264 ,  91.525085,  42.768955,  43.228336,  44.178196,  62.15593 , 109.270035, 174.49638 ,  72.6023  ,  48.021034, 44.86118 ,  48.659588, 100.97703 , 148.94061 ,  44.98218 , 139.11194 ,  71.4585  ,  47.766987,  45.77923 ,  45.610615,  60.50458 , 105.11658 ,  71.41217 ,  43.945534,  45.154167,  43.84058 ,  52.93122 ,  44.722775,  44.250145,  43.95989 ,  68.101326, 127.122025, 124.1893  ,  49.952255,  54.50728 , 114.91599]
+passband = ['g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 'r']
+photflag = [0,    0,    0,    0,    0,    0,    0,    0,    0,    0, 4096, 4096,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, 0,    0,    0,    0,    0,    0,    0,    0,    0, 4096, 6144, 4096, 4096, 4096, 0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0, 0,    0,    0,    0]
+objid = 'transient_1'
+ra = 3.75464531293933
+dec = 0.205076187109334
+redshift = 0.233557
+mwebv = 0.0228761
 
-# Make Spectrum1D object 
-sp1d = sp.Spectrum1D(flux=flux,wcs=my_wcs)
+light_curve_info1 = (mjd, flux, fluxerr, passband, photflag, ra, dec, objid, redshift, mwebv)
 
-# Extract the wavelength and flux values as separate xy axes lists
-wl_list = sp1d.spectral_axis.value
-flux_list = sp1d.flux.value
+# Classification
+light_curve_list = [light_curve_info1,]  # Add more light curves to be classified to this list.
 
-# Find the median flux around 6000A region and produce a normalised flux list using this median
-median_wl_list_idx = np.argsort(wl_list)[len(wl_list)//2]
-mid_range_fluxes = sorted(flux_list[median_wl_list_idx-25:median_wl_list_idx+26])
-median_mid_flux = st.median(mid_range_fluxes)
-flux_list_norm = flux_list / median_mid_flux
-# Idenitfy the position of any outlier peaks and troughs that are significantly bigger than their neighbours and remove them from the spectrum
-outlier_peaks_list_ids, _ = find_peaks(flux_list_norm, threshold=0.5)
-outlier_troughs_list_ids, _ = find_peaks(-flux_list_norm, threshold=0.5)
-all_outlier_list_ids = sorted([*outlier_peaks_list_ids, *outlier_troughs_list_ids])
-wl_list = np.delete(wl_list, all_outlier_list_ids)
-flux_list = np.delete(flux_list, all_outlier_list_ids)
+classification = Classify(known_redshift=True)
+predictions = classification.get_predictions(light_curve_list)
+print(predictions)
 
-# Perform any aspectral smoothing if a binning factor has been provided
-if bf != 'none':
-  wav = wl_list
-  flux = flux_list
-  wav_bin = np.linspace(wav[0], wav[-1], int(len(wav)/bf))
-  flux_bin = spectres(wav_bin, wav, flux)
-  wav_bin = wav_bin
-else:
-  wav_bin = wl_list
-  flux_bin = flux_list
-
-
-ascii_spec = np.column_stack((wav_bin, flux_bin))
-np.savetxt(f"{obj}_{date}_SPRAT.txt",ascii_spec, fmt="%f %g")
-
-# Create text file of spectrum
-with open(f"{obj}_{date}_SPRAT.txt",'r') as f:
-  with open('tempfile.txt','w') as f2: 
-    f2.writelines([
-        telescope + '\n', 
-        instrument + '\n', 
-        user + '\n', 
-        proposal + '\n', 
-        object + '\n', 
-        ra + '\n', 
-        dec + '\n', 
-        dateObs + '\n', 
-        mjdObs + '\n', 
-        exptime + '\n', 
-        airmass + '\n', 
-        seeing + '\n', 
-        colData + '\n', 
-        colType + '\n'])
-    f2.write(f.read())
-os.rename('tempfile.txt',f"{obj}_{date}_SPRAT.txt")
-
-fig = plt.figure()
-
-ax1 = fig.add_subplot(111)
-
-ax1.plot(wav_bin,flux_bin)
-ax1.set_xlabel(f"Observed Wavelength [A]")
-ax1.set_ylabel(f"Flux [{unitName}]")
-
-if host_z != 'none':
-
-  ax2 = ax1.twiny()
-  ax2.set_xticks(ax1.get_xticks())
-  ax2.set_xbound(ax1.get_xbound())
-  ax2.set_xticklabels([ int(round(x / (host_z + 1),0)) for x in ax1.get_xticks()])
-  
-  ax2.set_xlabel(f"Rest Wavelength [A]")
-
-plt.savefig(f"{obj}_{date}_SPRAT.png")
-plt.show()
+# Plot classifications vs time
+classification.plot_light_curves_and_classifications()
+classification.plot_classification_animation()
