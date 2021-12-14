@@ -21,4 +21,5 @@ astrorapid
 matplotlib
 numpy 
 pandas
+ffmpeg (conda install -c conda-forge ffmpeg)
 ```
