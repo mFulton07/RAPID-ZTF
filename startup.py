@@ -4,17 +4,16 @@
 import os
 import argparse
 import pandas as pd
-
 from astrorapid.classify import Classify
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run AstroRAPID on an object from the ZTF forced Photometry')
 
-    parser.add_argument('-n', dest='filename_str', help='Name of the ZTF forced photometry .txt file to fit with RAPID. File must be inside candidates direcotry. Mandatory.', default = 'ZTF21aaqytjr')
-    parser.add_argument('-z', dest='redshift_str', help='Spectroscopic or photometric redshift of the object or host. Optional.', default = '0.003319')
-    parser.add_argument('-ra', dest='ra_deg_str', help='Right Ascension of the object in degrees. Mandatory', default = '186.423654	')
-    parser.add_argument('-dec', dest='dec_deg_str', help='Declination of the object in degrees. Mandatory', default = '7.228395')
-    parser.add_argument('-mwebv', dest='ebv_str', help='Total galactic visual extinction (mwebv) in the line-of-sight of the object. Mandatory', default = '0.2851')
+    parser.add_argument('-n', dest='filename_str', help='Name of the ZTF forced photometry .txt file to fit with RAPID. File must be inside candidates direcotry. Mandatory.')
+    parser.add_argument('-z', dest='redshift_str', help='Spectroscopic or photometric redshift of the object or host. Optional.')
+    parser.add_argument('-ra', dest='ra_deg_str', help='Right Ascension of the object in degrees. Mandatory')
+    parser.add_argument('-dec', dest='dec_deg_str', help='Declination of the object in degrees. Mandatory')
+    parser.add_argument('-mwebv', dest='ebv_str', help='Total galactic visual extinction (mwebv) in the line-of-sight of the object. Mandatory')
     parser.add_argument('-v', dest='verbose', action='store_true', help='Turn on verbose mode (default: Off).')
 
     args = parser.parse_args()
