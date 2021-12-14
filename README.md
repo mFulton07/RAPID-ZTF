@@ -1,7 +1,5 @@
 # RAPID-ZTF
 
-# FastFinder
-
 To begin using RAPID-ZTF:
 
 1. Follow the [ZTF ForcedPhot handbook](http://web.ipac.caltech.edu/staff/fmasci/ztf/forcedphot.pdf) to create an account on the ZTF Forced Photometry Server and request forced photometry on your object.
